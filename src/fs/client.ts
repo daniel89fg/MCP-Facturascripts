@@ -1,16 +1,22 @@
 import axios, { AxiosInstance } from 'axios';
+import https from 'https';
 import { env } from '../env.js';
 
 export class FacturaScriptsClient {
   private client: AxiosInstance;
 
   constructor() {
+    const httpsAgent = process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0'
+      ? new https.Agent({ rejectUnauthorized: false })
+      : undefined;
+
     this.client = axios.create({
       baseURL: `${env.FS_BASE_URL}/api/${env.FS_API_VERSION}`,
       headers: {
         'token': env.FS_API_TOKEN,
         'Content-Type': 'application/json',
       },
+      httpsAgent,
     });
   }
 
