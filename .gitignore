@@ -62,6 +62,9 @@ facturascripts/
 .claude/
 /mysql/
 
+# Módulos locales del usuario (nunca se suben al repositorio)
+src/modules-local/
+
 # OpenAPI files - keep the current one, exclude the old one
 /facturascripts.openapi.json
 # Keep the current OpenAPI definition file

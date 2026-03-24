@@ -110,6 +110,8 @@ import { tarifasToolDefinition, tarifasToolImplementation } from './modules/conf
 import { totalModelesToolDefinition, totalModelesToolImplementation } from './modules/system/totalmodeles/index.js';
 import { variantesToolDefinition, variantesToolImplementation } from './modules/core-business/variantes/index.js';
 import { workEventesToolDefinition, workEventesToolImplementation } from './modules/system/workeventes/index.js';
+import { loadLocalModules } from './local-loader.js';
+import type { LoadedLocalModule } from './types/local-module.js';
 
 const server = new Server(
   {
@@ -203,6 +205,8 @@ const subcuentasResource = new SubcuentasResource(fsClient);
 const tarifasResource = new TarifasResource(fsClient);
 const totalModelesResource = new TotalModelesResource(fsClient);
 const workEventesResource = new WorkEventesResource(fsClient);
+// Módulos locales — se cargan en runServer() antes de conectar
+let localModules: LoadedLocalModule[] = [];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
@@ -2095,6 +2099,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
         },
       },
+      // Módulos locales (cargados dinámicamente desde src/modules-local/)
+      ...localModules.map(m => m.toolDefinition),
     ],
   };
 });
@@ -2570,6 +2576,13 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
         description: 'Lista de eventos y trabajos del sistema para monitoreo y seguimiento de procesos',
         mimeType: 'application/json',
       },
+      // Módulos locales (cargados dinámicamente desde src/modules-local/)
+      ...localModules.map(m => ({
+        uri: `facturascripts://${m.resourceName}`,
+        name: `FacturaScripts Local — ${m.resourceName}`,
+        description: m.resourceDescription,
+        mimeType: 'application/json',
+      })),
     ],
   };
 });
@@ -2887,6 +2900,13 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
   if (workEventesResource.matchesUri(uri)) {
     return await workEventesResource.getResource(uri);
+  }
+
+  // Módulos locales
+  for (const localModule of localModules) {
+    if (localModule.instance.matchesUri(uri)) {
+      return await localModule.instance.getResource(uri);
+    }
   }
 
   throw new Error(`Resource not found: ${uri}`);
@@ -3836,8 +3856,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      default:
+
+      default: {
+        // Módulos locales
+        const localMod = localModules.find(m => m.toolDefinition.name === name);
+        if (localMod) {
+          const uri = buildUri(localMod.resourceName);
+          const result = await localMod.instance.getResource(uri);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: (result as any).contents?.[0]?.text || 'No data',
+              },
+            ],
+          };
+        }
         throw new Error(`Unknown tool: ${name}`);
+      }
     }
   } catch (error) {
     return {
@@ -3853,6 +3889,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function runServer() {
+  localModules = await loadLocalModules(fsClient);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('MCP FacturaScripts server running on stdio');
